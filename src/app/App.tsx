@@ -1,5 +1,7 @@
 "use client";
 
+import { createElevenLabsConnection, ElevenLabsConfig } from "./lib/elevenLabsConnection";
+
 import React, { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { v4 as uuidv4 } from "uuid";
@@ -51,6 +53,10 @@ function App() {
   const [isAudioPlaybackEnabled, setIsAudioPlaybackEnabled] =
     useState<boolean>(true);
 
+  const [elevenLabsConfig, setElevenLabsConfig] = useState<ElevenLabsConfig | null>(null);
+  const [selectedVoiceId, setSelectedVoiceId] = useState<string>("");
+
+
   const sendClientEvent = (eventObj: any, eventNameSuffix = "") => {
     if (dcRef.current && dcRef.current.readyState === "open") {
       logClientEvent(eventObj, eventNameSuffix);
@@ -74,6 +80,58 @@ function App() {
     sendClientEvent,
     setSelectedAgentName,
   });
+
+  useEffect(() => {
+    async function fetchElevenLabsConfig() {
+      try {
+        const response = await fetch("/api/elevenlabs/config");
+        if (response.ok) {
+          const config = await response.json();
+          setElevenLabsConfig({
+            apiKey: config.apiKey,
+            voiceId: config.defaultVoiceId || "Sarah",
+            modelId: config.defaultModelId || "eleven_flash_v2_5",
+            stability: config.defaultStability || 0.5,
+            similarityBoost: config.defaultSimilarityBoost || 0.75,
+          });
+          setSelectedVoiceId(config.defaultVoiceId || "Sarah");
+        }
+      } catch (error) {
+        console.error("Error fetching ElevenLabs config:", error);
+        // Set default config if fetch fails
+        setElevenLabsConfig({
+          apiKey: process.env.ELEVENLABS_API_KEY || "",
+          voiceId: "Sarah",
+          modelId: "eleven_flash_v2_5",
+          stability: 0.5,
+          similarityBoost: 0.75,
+        });
+      }
+    }
+    
+    fetchElevenLabsConfig();
+  }, []);
+
+  useEffect(() => {
+    if (
+      dataChannel?.readyState === "open" &&
+      elevenLabsConfig &&
+      audioElementRef.current &&
+      isAudioPlaybackEnabled
+    ) {
+      // Initialize ElevenLabs connection after the data channel is established
+      createElevenLabsConnection(
+        {
+          ...elevenLabsConfig,
+          voiceId: selectedVoiceId || elevenLabsConfig.voiceId,
+        },
+        audioElementRef,
+        dataChannel
+      ).catch(err => {
+        console.error("Error setting up ElevenLabs connection:", err);
+      });
+    }
+  }, [dataChannel, elevenLabsConfig, selectedVoiceId, isAudioPlaybackEnabled]);
 
   useEffect(() => {
     let finalAgentConfig = searchParams.get("agentConfig");
@@ -123,6 +181,18 @@ function App() {
       updateSession();
     }
   }, [isPTTActive]);
+
+  const handleVoiceChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newVoiceId = e.target.value;
+    setSelectedVoiceId(newVoiceId);
+
+    if (elevenLabsConfig) {
+      setElevenLabsConfig({
+        ...elevenLabsConfig,
+        voiceId: newVoiceId,
+      });
+    }
+  };
 
   const fetchEphemeralKey = async (): Promise<string | null> => {
     logClientEvent({ url: "/session" }, "fetch_session_token_request");
@@ -235,12 +305,12 @@ function App() {
     const turnDetection = isPTTActive
       ? null
       : {
-          type: "server_vad",
-          threshold: 0.5,
-          prefix_padding_ms: 300,
-          silence_duration_ms: 200,
-          create_response: true,
-        };
+        type: "server_vad",
+        threshold: 0.5,
+        prefix_padding_ms: 300,
+        silence_duration_ms: 200,
+        create_response: true,
+      };
 
     const instructions = currentAgent?.instructions || "";
     const tools = currentAgent?.tools || [];
@@ -250,12 +320,13 @@ function App() {
       session: {
         modalities: ["text", "audio"],
         instructions,
-        voice: "coral",
+        // voice: "coral",
         input_audio_format: "pcm16",
         output_audio_format: "pcm16",
         input_audio_transcription: { model: "whisper-1" },
         turn_detection: turnDetection,
         tools,
+        disable_default_audio_response: true
       },
     };
 
@@ -509,7 +580,8 @@ function App() {
         setIsEventsPaneExpanded={setIsEventsPaneExpanded}
         isAudioPlaybackEnabled={isAudioPlaybackEnabled}
         setIsAudioPlaybackEnabled={setIsAudioPlaybackEnabled}
-      />
+        selectedVoiceId={selectedVoiceId}
+        handleVoiceChange={handleVoiceChange}      />
     </div>
   );
 }
