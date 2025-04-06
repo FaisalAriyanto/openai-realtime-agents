@@ -15,6 +15,8 @@ interface BottomToolbarProps {
   setIsAudioPlaybackEnabled: (val: boolean) => void;
   selectedVoiceId: string;
   handleVoiceChange: (e: React.ChangeEvent<HTMLSelectElement>) => void;
+  showDebug: boolean;
+  setShowDebug: (val: boolean) => void;
 }
 
 function BottomToolbar({
@@ -31,6 +33,8 @@ function BottomToolbar({
   setIsAudioPlaybackEnabled,
   selectedVoiceId,
   handleVoiceChange,
+  showDebug,
+  setShowDebug,
 }: BottomToolbarProps) {
   const isConnected = sessionStatus === "CONNECTED";
   const isConnecting = sessionStatus === "CONNECTING";
@@ -145,6 +149,19 @@ function BottomToolbar({
         />
         <label htmlFor="logs" className="flex items-center cursor-pointer">
           Logs
+        </label>
+      </div>
+
+      <div className="flex flex-row items-center gap-2">
+        <input
+          id="debug"
+          type="checkbox"
+          checked={showDebug}
+          onChange={e => setShowDebug(e.target.checked)}
+          className="w-4 h-4"
+        />
+        <label htmlFor="debug" className="flex items-center cursor-pointer">
+          Debug
         </label>
       </div>
     </div>

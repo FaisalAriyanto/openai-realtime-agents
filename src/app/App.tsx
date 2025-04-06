@@ -1,3 +1,4 @@
+// src/app/App.tsx
 "use client";
 
 import { createElevenLabsConnection, ElevenLabsConfig } from "./lib/elevenLabsConnection";
@@ -12,6 +13,7 @@ import Image from "next/image";
 import Transcript from "./components/Transcript";
 import Events from "./components/Events";
 import BottomToolbar from "./components/BottomToolbar";
+import ElevenLabsDebug from "./components/ElevenLabsDebug"; // Add this import
 
 // Types
 import { AgentConfig, SessionStatus } from "@/app/types";
@@ -42,6 +44,7 @@ function App() {
   const pcRef = useRef<RTCPeerConnection | null>(null);
   const dcRef = useRef<RTCDataChannel | null>(null);
   const audioElementRef = useRef<HTMLAudioElement | null>(null);
+  const [audioElementCreated, setAudioElementCreated] = useState<boolean>(false); // Add this state
   const [sessionStatus, setSessionStatus] =
     useState<SessionStatus>("DISCONNECTED");
 
@@ -52,6 +55,7 @@ function App() {
   const [isPTTUserSpeaking, setIsPTTUserSpeaking] = useState<boolean>(false);
   const [isAudioPlaybackEnabled, setIsAudioPlaybackEnabled] =
     useState<boolean>(true);
+  const [showDebug, setShowDebug] = useState<boolean>(false); // Add this state for debug toggle
 
   const [elevenLabsConfig, setElevenLabsConfig] = useState<ElevenLabsConfig | null>(null);
   const [selectedVoiceId, setSelectedVoiceId] = useState<string>("");
@@ -81,6 +85,19 @@ function App() {
     setSelectedAgentName,
   });
 
+  // Add this useEffect to create and append the audio element to DOM
+  useEffect(() => {
+    if (!audioElementRef.current) {
+      const audioEl = document.createElement('audio');
+      audioEl.autoplay = isAudioPlaybackEnabled;
+      audioEl.id = 'voice-output';
+      document.body.appendChild(audioEl);
+      audioElementRef.current = audioEl;
+      setAudioElementCreated(true);
+      console.log("Audio element created and added to DOM");
+    }
+  }, []);
+
   useEffect(() => {
     async function fetchElevenLabsConfig() {
       try {
@@ -95,6 +112,7 @@ function App() {
             similarityBoost: config.defaultSimilarityBoost || 0.75,
           });
           setSelectedVoiceId(config.defaultVoiceId || "Sarah");
+          console.log("ElevenLabs config fetched successfully");
         }
       } catch (error) {
         console.error("Error fetching ElevenLabs config:", error);
@@ -112,13 +130,15 @@ function App() {
     fetchElevenLabsConfig();
   }, []);
 
+  // Modify this useEffect to use audioElementCreated
   useEffect(() => {
     if (
+      audioElementCreated &&
       dataChannel?.readyState === "open" &&
       elevenLabsConfig &&
-      audioElementRef.current &&
       isAudioPlaybackEnabled
     ) {
+      console.log("Setting up ElevenLabs connection with voice:", selectedVoiceId || elevenLabsConfig.voiceId);
       // Initialize ElevenLabs connection after the data channel is established
       createElevenLabsConnection(
         {
@@ -131,7 +151,7 @@ function App() {
         console.error("Error setting up ElevenLabs connection:", err);
       });
     }
-  }, [dataChannel, elevenLabsConfig, selectedVoiceId, isAudioPlaybackEnabled]);
+  }, [dataChannel, elevenLabsConfig, selectedVoiceId, isAudioPlaybackEnabled, audioElementCreated]);
 
   useEffect(() => {
     let finalAgentConfig = searchParams.get("agentConfig");
@@ -221,9 +241,13 @@ function App() {
       }
 
       if (!audioElementRef.current) {
-        audioElementRef.current = document.createElement("audio");
+        const audioEl = document.createElement("audio");
+        audioEl.autoplay = isAudioPlaybackEnabled;
+        audioEl.id = 'voice-output';
+        document.body.appendChild(audioEl);
+        audioElementRef.current = audioEl;
+        setAudioElementCreated(true);
       }
-      audioElementRef.current.autoplay = isAudioPlaybackEnabled;
 
       const { pc, dc } = await createRealtimeConnection(
         EPHEMERAL_KEY,
@@ -234,15 +258,20 @@ function App() {
 
       dc.addEventListener("open", () => {
         logClientEvent({}, "data_channel.open");
+        console.log("Data channel opened successfully");
       });
       dc.addEventListener("close", () => {
         logClientEvent({}, "data_channel.close");
+        console.log("Data channel closed");
       });
       dc.addEventListener("error", (err: any) => {
         logClientEvent({ error: err }, "data_channel.error");
+        console.error("Data channel error:", err);
       });
       dc.addEventListener("message", (e: MessageEvent) => {
-        handleServerEventRef.current(JSON.parse(e.data));
+        const data = JSON.parse(e.data);
+        console.log("Received message type:", data.type);
+        handleServerEventRef.current(data);
       });
 
       setDataChannel(dc);
@@ -581,7 +610,19 @@ function App() {
         isAudioPlaybackEnabled={isAudioPlaybackEnabled}
         setIsAudioPlaybackEnabled={setIsAudioPlaybackEnabled}
         selectedVoiceId={selectedVoiceId}
-        handleVoiceChange={handleVoiceChange}      />
+        handleVoiceChange={handleVoiceChange}
+        showDebug={showDebug}
+        setShowDebug={setShowDebug}
+      />
+      
+      {/* Add ElevenLabsDebug component */}
+      {showDebug && (
+        <ElevenLabsDebug 
+          elevenLabsConfig={elevenLabsConfig}
+          audioElementRef={audioElementRef}
+          dataChannelState={dataChannel?.readyState || null}
+        />
+      )}
     </div>
   );
 }
